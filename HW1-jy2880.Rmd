@@ -1,0 +1,155 @@
+---
+title: "STCS 6701 HW1"
+author: "Jiaqian Yu-jy2880"
+date: "2018.10.5"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+info <- read.table('senate/senators.txt')
+# unique(info$V2)
+data <- read.csv('senate/votes.csv',header=FALSE)
+#party <- info$V2[,]
+```
+
+```{r}
+x <- rep(0,nrow(data))
+y <- rep(0,nrow(data))
+for (i in 1:nrow(data)){
+  x[i] <- sum(data[i,]==1)
+  y[i] <- sum(data[i,]==0)+sum(data[i,]==1)
+}
+```
+
+
+```{r}
+k <- 3
+```
+
+```{r}
+normalize <- function(x){return(x/sum(x))}
+
+```
+
+```{r}
+  #' @param x an n vector of data(all the 0)
+  #' @param y an n vector of data (all the 0 and 1)
+  #' @param sita a k vector
+  #' @param beta a k vector
+  sample_z <- function(x,y,sita,beta){
+    df <- data.frame(matrix(0,k,nrow(data)))
+    for (i in 1:nrow(data)){
+      df[,i] <- dbinom(x[i],y[i],beta)
+    }
+    p.z.given.x <- as.vector(sita) * df
+    p.z.given.x <- apply(p.z.given.x,2,normalize) # normalize columns
+    z <- rep(0, length(x))
+    for(i in 1:length(z)){
+#z[i] <- which.max(p.z.given.x[,i])
+      z[i] <- sample(1:length(sita), size=1,prob=p.z.given.x[,i],replace=TRUE)
+    }
+    return(z)
+  }
+ 
+```
+
+```{r}
+  #' @param z an n vector of cluster allocations (1...k)
+  #' @param k the number of clusters
+  sample_sita <- function(z,k){
+    counts <- colSums(outer(z,1:k,FUN="=="))
+    sita <- gtools::rdirichlet(1,counts+1)
+    return(sita)
+  }
+
+```
+
+```{r}
+  #' @param x an n vector of data(all the 0)
+  #' @param y an n vector of data (all the 0 and 1)
+  #' @param z an n vector of cluster allocations
+  #' @param k the number o clusters
+  sample_beta <- function(x,y,z,k, priora,priorb){
+    df2 = data.frame(x=x,y=y,z=z)
+    beta = rep(0,k)
+    for(i in 1:k){
+      a <- sum(x[z==i])
+      b <- sum(y[z==i])-a
+      beta[i] = rbeta(1,priora+a,priorb+b)
+    }
+    return(beta)
+  }
+```
+
+```{r}
+  gibbs <- function(x,y,k,niter =100,priora = 1, priorb = 1){
+    sita <- gtools::rdirichlet(1,c(1,1,1))
+    beta <- rbeta(k,1,1)
+    z <- sample_z(x,y,sita,beta)
+    res <- list(beta=matrix(nrow=niter, ncol=k), sita = matrix(nrow=niter,ncol=k), z = matrix(nrow=niter, ncol=length(x)))
+    res$beta[1,] <- beta
+    res$sita[1,] <- sita
+    res$z[1,] <- z 
+    for(i in 2:niter){
+        sita <- sample_sita(z,k)
+        beta<- sample_beta(x,y,z,k,priora,priorb)
+        z <- sample_z(x,y,sita,beta)
+        res$beta[i,] <- beta
+        res$sita[i,] <- sita
+        res$z[i,] <- z
+    }
+    return(res)
+  }
+```
+
+
+
+```{r}
+  res2 = gibbs(x,y,k)
+```
+
+```{r}
+loglikelihood <- rep(0,100)
+for (j in 1:100){
+  jdsita <- gtools::ddirichlet(res2$sita[j,],c(1,1,1))
+
+jdbeta <- res2$beta[j,1]*res2$beta[j,2]*res2$beta[j,3]
+#for (i in 1:nrow(data)){
+#  jdxn <- (res2$sita[1,res2$z[i]])*dbinom(x[i],y[i],res2$beta[1,res2$z[i]])
+#  jdx <- jdxn*jdx
+#}
+w<-0
+for (i in 1:nrow(data)){ 
+  wn<- log(res2$sita[j,res2$z[i]])
+  w <- w+wn
+}
+v <- 0
+for (i in 1:nrow(data)){ 
+  vn<- log(dbinom(x[i],y[i],res2$beta[j,res2$z[i]]))
+  v <- v+vn
+}
+# plot(res2$beta[,1])
+logjd <- log(jdsita)+log(jdbeta)+w+v
+loglikelihood[j] <-logjd 
+}
+```
+
+```{r}
+plot(loglikelihood,type="l")
+```
+```{r}
+par(mfrow=c(2,2))
+plot(res2$beta[,1],ylab="beta1")
+plot(res2$beta[,2],ylab="beta2")
+plot(res2$beta[,3],ylab="beta3")
+par(mfrow=c(2,2))
+plot(res2$sita[,1],ylab="sita1")
+plot(res2$sita[,2],ylab="sita2")
+plot(res2$sita[,3],ylab="sita3")
+
+```
